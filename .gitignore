@@ -1,3 +1,7 @@
 credentials.json
 token.json
 test.ipynb
+service_key.json
+_pycache_/
+misc
+resource_id.txt
