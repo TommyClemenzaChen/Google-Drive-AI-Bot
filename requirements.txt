@@ -5,3 +5,10 @@ google-auth-oauthlib==1.1.0
 google-auth-httplib2==0.2.0
 google-api-python-client==2.103.0
 mangum==0.15.0  # Include this if deploying on AWS Lambda
+pymupdf
+python-docx
+langchain-openai
+langchain
+pinecone
+langchain-text-splitters
+python-dotenv

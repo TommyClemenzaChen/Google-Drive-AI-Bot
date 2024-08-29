@@ -7,6 +7,7 @@ import threading
 
 from app.helper.config import FOLDER_ID
 from app.drive_monitor import DriveMonitor
+from app.file_to_pinecone import index_text_files, clear_folder
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -17,11 +18,9 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 mangum = Mangum(app)
 
-COOLDOWN_TIME = 60  # time in seconds to wait before processing next update
 request_lock = threading.Lock() # Lock to ensure only one request is processed at a time
-port = 8080
 
-
+logging.info("Starting DriveMonitor")
 Drive = DriveMonitor() # initializing the DriveMonitor object
 # time.sleep(10)  # Wait for 10 seconds before proceeding
 
@@ -31,21 +30,18 @@ def index():
 
 @app.post("/webhook")
 def webhook(request: Request):
-
+    logging.info("Received request")
      # Doesn't send the query when the server starts
-    state = request.headers.get('x-goog-resource-state', 'Not Found')
-    if state == 'sync':
-        logger.info("Sync message received")
-        return {"status": "Starting up"}
+    # state = request.headers.get('x-goog-resource-state', 'Not Found')
+    # if state == 'sync':
+    #     logger.info("Sync message received")
+    #     return {"status": "Starting up"}
 
     # Checks if we are on cooldown
-    current_time = time.time()
-    if current_time - Drive.get_prev_time() < COOLDOWN_TIME:
-        logging.info("On cooldown")
-        return {"status": "On Cooldown"}
-    Drive.set_time(current_time)
+    if Drive.is_cooldown():
+        return {"status": "On cooldown"}
 
-        
+    # Lock to ensure only one request is processed at a time
     with request_lock:
        
         request_body = {
@@ -53,38 +49,32 @@ def webhook(request: Request):
             "ancestorName": f"items/{FOLDER_ID}"
         }
         try:
-            response = Drive.ActivityTracker.activity().query(body=request_body).execute()
-            activities = response.get('activities', [])
+            clear_folder("data/")
+            activities = Drive._get_activities(request_body)
+            Drive.download(activities)
 
-            # Print out the activities
-            if not activities:
-                logger.info("No activity.")
-            else:
-                logger.info('Recent activity:')
-                logger.info(f"Number of activities: {len(activities)}")
-
-                for i, activity in enumerate(activities):
-                    event = activity.get('primaryActionDetail')
-                    targets = activity.get('targets')
-                    file_name = targets[0].get('driveItem').get('title')
-                    file_id = targets[0].get('driveItem').get('name')
-                    file_type = targets[0].get('driveItem').get('mimeType')
-
-                    # Log the variables
-                    logger.info("=====================================")
-                    logger.info(f"Event: {event}_{i}")
-                    logger.info(f"File Name: {file_name}")
-                    logger.info(f"File ID: {file_id}")
-                    logger.info(f"File Type: {file_type}")
-                    logger.info("=====================================\n\n\n")
+            # chunk the data
+            # index_text_files("data/")
+            # clear_folder("data/")
+            
 
         except Exception as e:
             logger.error(f"Error getting changes: {e}")
             return {"status": "Error"}
 
         return {"status": "Received"}
+@app.post("/test")
+def test():
+    try:
+        index_text_files("data/")
+
+        return {"status": "Received"}
+    except Exception as e:
+        logger.error(f"Error getting changes: {e}")
+        return {"status": "Error"}
+
 
 # This entry point is used for local testing
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, port=port)
+    uvicorn.run(app)
